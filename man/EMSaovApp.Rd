@@ -4,7 +4,11 @@
 \alias{EMSaovApp}
 \title{Shiny App for the analysis of variance in various experimental designs}
 \usage{
-EMSaovApp()
+EMSaovApp(nested.N=2)
+}
+\arguments{
+\item{nested.N}{number of factors of possible crossed design 
+which can nest a factor}
 }
 \description{
 Shiny App for the analysis of variance in various experimental designs

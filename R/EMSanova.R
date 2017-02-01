@@ -2,74 +2,89 @@
 #' 
 #' Calculate ANOVA table with EMS for various experimental design - factorial design, nested
 #' design, mixed effect model, etc.
-#' @usage EMS.anova(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
-#'         model.level=NULL,n.table=NULL,approx.flag=FALSE,...)
-#' @param data.tot data frame for ANOVA
-#' @param Y.name the name of dependent variable
-#' @param var.list the names of factors
-#' @param FixRan.list the list of fixed/random for each factor. 
+#' @usage EMSanova(formula,data,type=NULL,nested=NULL,
+#'                  level=NULL,approximate=FALSE)
+#' @param formula model formula         
+#' @param data data frame for ANOVA
+#' @param type the list of fixed/random for each factor. 
 #'        "F" for the fixed effect, "R" for the random effect
-#' @param nested.list the list of nested effect
-#' @param model.level list of model level
-#' @param n.table numbers of levels in each factor
-#' @param approx.flag calculate approximated F for "TRUE"
-#' @param ... arguments to be passed to methods
+#' @param nested the list of nested effect
+#' @param level list of model level
+#' @param approximate calculate approximated F for "TRUE"
 #' @export
 #' @examples
-#' test <- gl(2, 21, 42, labels = c("Ctl","Trt"))
-#' Group <- rep(gl(3, 7, 21, labels = c("I","II","III")),2)
-#' Subject <- rep(1:7,6)
-#' Y<-c(26.25,24.33,22.52,29.33,28.9,25.13,29.33,
-#' 27.47,25.19,23.53,24.57,26.88,27.86,28.09,
-#' 22.27,21.55,23.31,30.03,28.17,28.09,27.55,
-#'   29.5,27.62,25.71,31.55,31.35,29.07,31.15,
-#'   28.74,26.11,25.45,25.58,27.7,28.82,28.99,
-#'   22.52,21.79,23.53,30.21,28.65,28.33,27.86)
-#' tot.data<-data.frame(Y=Y,test=test,Group=Group,Subject=Subject)
-#' anova.result<-EMS.anova(data.tot=tot.data,
-#'                         Y.name="Y",
-#'                  var.list=c("Group","Subject","test"),
-#'                  FixRan.list=c("F","R","F"),
-#'                  nested.list=c(NA,"Group",NA),
-#'                  model.level=c(1,1,2))
+#' data(baseball)
+#' anova.result<-EMSanova(velocity~Group+Subject+test,data=baseball,
+#'                  type=c("F","R","F"),
+#'                  nested=c(NA,"Group",NA),
+#'                  level=c(1,1,2))
 #' anova.result                  
-EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
-                      model.level=NULL,n.table=NULL,approx.flag=FALSE,...){
+EMSanova<-function(formula,data,type=NULL,nested=NULL,
+                       level=NULL,approximate=FALSE){
   
+  Call<-match.call()
+  indx<-match(c("formula","data"),names(Call),nomatch=0L)
+  if(indx[1]==0L) 
+    stop("a 'formula' argument is required")
+  temp<-Call[c(1L,indx)]
+  temp[[1L]]<-quote(stats::model.frame)
+  m<-eval.parent(temp)
+  Terms<-attr(m,"terms")
+  
+  formula.t<-as.character(formula)
+  Y.name<-formula.t[2]
+  data.n<-strsplit(formula.t[3]," \\+ ")[[1]]
+  if(data.n[1]=="."){
+    var.list<-colnames(data)[colnames(data)!=Y.name]
+  } else{
+    temp1<-unlist(sapply(data.n,strsplit," "))
+    var.list<-unique(temp1[temp1!=" " & temp1 !="*"& temp1!=""])
+  } 
   ## adjust the order of X variable for multi-level model
- 
-  if(!is.null(nested.list)){
-    if(sum(!is.na(nested.list))!=0){
-      nested.list<-unlist(lapply(nested.list,function(x){ 
-                  temp<-which(var.list==x);ifelse(length(temp)==0,NA,temp)}))
-    }  
-  }
-  if(!is.null(model.level)){
-    sort.id<-sort.list(model.level)
-    nested.list<-var.list[nested.list[sort.id]]
-    model.level<-model.level[sort.id]
+
+  if(!is.null(level)){
+    sort.id<-sort.list(level)
+    nested<-nested[sort.id]
+    level<-level[sort.id]
     var.list<-var.list[sort.id]
-    nested.list<-unlist(lapply(nested.list,function(x){ 
-                   temp<-which(var.list==x);ifelse(length(temp)==0,NA,temp)}))
-    FixRan.list<-FixRan.list[sort.id]
-    n.table[1:length(sort.id)]<-n.table[sort.id]
+    type<-type[sort.id]
+    #if(!is.null(n.table)) n.table[1:length(sort.id)]<-n.table[sort.id]
   }  
-  if(is.null(nested.list)){
-     nested.list<-rep(NA,length(var.list))
+  if(!is.null(nested) &ifelse(length(nested)!=0,sum(!is.na(nested)),0)!=0){
+    nested<-lapply(nested,function(x){ 
+      xx<-strsplit(x,split="\\*")[[1]];
+      temp<-NULL
+      for(i in 1:length(xx))
+        temp<-c(temp,which(var.list==xx[i]));
+      if(length(temp)==0){
+        return(NA)
+      } else{
+        return(temp)
+      }})
+  } else{
+    nested<-as.list(rep(NA,length(var.list)))
   }   
-  if(is.null(n.table)){
+  EMSflag<-FALSE
+  n.table<-NULL
+#  if(is.null(n.table)){
     for(i in 1:length(var.list)){
-      n.table<-c(n.table,length(table(data.tot[,var.list[i]])))
+      temp<-table(data[,var.list[i]])
+      if(sum(temp!=mean(temp))!=0)
+         EMSflag<-TRUE
+      n.table<-c(n.table,length(temp))
     }
-    n.table<-c(n.table,mean(table(apply(data.tot[,var.list],1,
-                                function(x) paste(x,collapse="")))))
-  }
-  
+    n.table<-c(n.table,mean(table(apply(data[,var.list],1,
+                                        function(x) paste(x,collapse="")))))
+#  }
+  if(EMSflag){
+    warning("EMSanova cannot handle the unbalanced design.")
+    return(0)
+  }  
   ## Change all X variables to factors
   
-  data.tot<-data.tot[,c(var.list,Y.name)]
+  data<-data[,c(var.list,Y.name)]
   for(i in var.list){
-    data.tot[,i]<-factor(data.tot[,i])
+    data[,i]<-factor(data[,i])
   }
   
   ## design.M1
@@ -87,63 +102,72 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
   ## Full model ANOVA
   
   model.F<-paste(Y.name,"~",paste(apply(design.M1,1,function(x) 
-                  paste(paste(x[x!=""],collapse="*"))),collapse="+"))
+    paste(paste(x[x!=""],collapse="*"))),collapse="+"))
   model.id<-c(apply(design.M1,1,function(x) 
-      paste(paste(x[x!=""],collapse=":"))),"Residuals")
+    paste(paste(x[x!=""],collapse=":"))),"Residuals")
   options(warn=-1)
   SS.table<-stats::anova(stats::lm(eval(model.F),
-                                   data = data.tot))[model.id,1:2]
+                                   data = data))[model.id,1:2]
+  modelSS<-stats::anova(stats::lm(formula,
+                                  data = data))[,1:2]
   options(warn=0)
   ## treat nested
   
   colnames(design.M1)<-var.list
-  nest.id<-which(!is.na(nested.list))
-  
+  nest.id<-which(!is.na(nested))
   if(length(nest.id)>0){
     for(i in 1:length(nest.id)){
-      temp.list<-var.list[apply(design.M1[,1:n],1,function(x) 
-        ifelse(sum(x==var.list[nest.id[i]])==0,
-               NA,nested.list[nest.id[i]]))]
-      del.list<-which(apply(design.M1[,1:n],1,function(x) 
-        sum(x==var.list[nest.id[i]])*
-          sum(x==var.list[nested.list[nest.id[i]]]))==1)
-      for(k in 1:length(del.list)){
-        comb.id<-del.list[k]
-        temp.k<-design.M1[comb.id,]
-        temp.k<-temp.k[temp.k!="" & temp.k!=var.list[nested.list[nest.id[i]]]]
-        temp.k<-paste(temp.k,collapse="")
-        comb.id<-c(comb.id,which(apply(design.M1,1,
-                            function(x) paste(x,sep="",collapse=""))==temp.k))
-        SS.temp<-apply(SS.table[comb.id,],2,sum)
-        SS.table[comb.id[length(comb.id)],]<-SS.temp
-      }
-      design.M1<-cbind(design.M1,temp.list)
-      colnames(design.M1)<-c(colnames(design.M1)[-ncol(design.M1)],"nested")
-      design.M1<-design.M1[-del.list,]
-      SS.table<-SS.table[-del.list,]
-      
-      ## nested-nested-...
-      
-      flag<-TRUE
-      id.t<-nest.id[i]
-      while(flag){
-        temp.c<-nested.list[nested.list[id.t]]
-        if(is.na(temp.c)){
-          flag<-FALSE
-        }else{
-          del.list<-which(apply(design.M1,1,function(x) 
-            sum(x[1:n]==var.list[temp.c])*!is.na(x[n+i]))==1)
-          design.M1<-design.M1[-del.list,]    
-          SS.temp<-apply(SS.table[del.list,],2,sum)
-          design.M1[which(design.M1[,n+i] ==
-                            var.list[nested.list[nest.id[i]]]),
-                    n+temp.c]<-var.list[temp.c]
-          sel.id<-which(design.M1[,n+i] ==
-                          var.list[nested.list[nest.id[i]]])
-          SS.table[sel.id,] <-SS.table[sel.id,]+SS.temp
-          SS.table<-SS.table[-del.list,]
+      for(j in 1:length(nested[[nest.id[i]]])){
+        temp.list<-apply(design.M1[,1:n],1,function(x) 
+          ifelse(sum(x==var.list[nest.id[i]])==0,
+                 NA,var.list[nested[[nest.id[i]]][j]]))
+        del.list<-which(apply(design.M1[,1:n],1,function(x) 
+          sum(x==var.list[nest.id[i]])*
+            sum(x==var.list[nested[[nest.id[i]]][j]]))==1)
+        for(k in 1:length(del.list)){
+          comb.id<-del.list[k]
+          temp.k<-design.M1[comb.id,]
+          temp.k<-temp.k[temp.k!="" & temp.k!=var.list[nested[[nest.id[i]]][j]]]
+          temp.k<-paste(temp.k,collapse="")
+          comb.id<-c(comb.id,which(apply(design.M1,1,
+                                         function(x) paste(x,sep="",collapse=""))==temp.k))
+          SS.temp<-apply(SS.table[comb.id,],2,sum)
+          SS.table[comb.id[length(comb.id)],]<-SS.temp
         }
-        id.t<-nested.list[id.t]
+        design.M1<-cbind(design.M1,temp.list)
+        colnames(design.M1)<-c(colnames(design.M1)[-ncol(design.M1)],"nested")
+        design.M1<-design.M1[-del.list,]
+        SS.table<-SS.table[-del.list,]
+        
+        ## nested-nested-...
+        
+        flag<-TRUE
+        id.t<-nest.id[i]
+        while(flag){
+          n.id.t<-nested[[id.t]]
+          temp.c<-unlist(nested[n.id.t])
+          temp.c<-temp.c[!is.na(temp.c)]
+          
+          if(length(temp.c)==0){
+            flag<-FALSE
+          }else{
+            for(l in 1:length(temp.c)){
+              temp.j<-ncol(design.M1)        
+              del.list<-which(apply(design.M1,1,function(x) 
+                sum(x[1:n]==var.list[temp.c[l]])*!is.na(x[temp.j]))==1)
+              design.M1<-design.M1[-del.list,]    
+              SS.temp<-apply(SS.table[del.list,],2,sum)
+              design.M1[which(design.M1[,temp.j] ==
+                                var.list[nested[[nest.id[i]]][j]]),
+                        n+temp.c[l]]<-var.list[temp.c[l]]
+              sel.id<-which(design.M1[,temp.j] ==
+                              var.list[nested[[nest.id[[i]]]][j]])
+              SS.table[sel.id,] <-SS.table[sel.id,]+SS.temp
+              SS.table<-SS.table[-del.list,]
+            }  
+          }
+          id.t<-nested[[id.t]]
+        }
       }
     } 
   }  
@@ -154,7 +178,7 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
   out<-apply(design.M1,1,function(x) 
     ifelse(paste(x[-(1:n)],collapse="")!="",
            paste(paste(x[1:n][x[1:n]!=""],collapse=":"),
-                 "(",paste(x[-(1:n)][x[-(1:n)]!=""],collapse=","),
+                 "(",paste(x[-(1:n)][x[-(1:n)]!=""],collapse="*"),
                  ")",sep=""),
            paste(x[1:n][x[1:n]!=""],collapse=":")))
   rownames(SS.table)[-nrow(SS.table)]<-out
@@ -172,7 +196,7 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
     if(sum(temp[,i]==var.list[i],na.rm=TRUE)!=0){
       id.t<-which(is.na(temp[,i]))
       EMS.table[id.t,i]<-n.table[i]
-      if(FixRan.list[i]=="R")  EMS.table[-c(id.t,n.EMS),i]<-1
+      if(type[i]=="R")  EMS.table[-c(id.t,n.EMS),i]<-1
     }else{
       sel.id<-which(!is.na(temp[,i]))
       EMS.table[sel.id,which(var.list==temp[sel.id,i][1])]<-1
@@ -223,7 +247,6 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
       temp<-temp[nn:1] 
       temp.EMS<-paste(temp.T.1[temp==1],name.temp.T[temp==1],
                       sep="",collapse="+")
-      
     }else{
       temp<-c(rep(0,ncol(EMS.table)-1),1)
       temp.EMS<-"Error"
@@ -233,13 +256,13 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
   
   ## model level
   
-  if(!is.null(model.level)){
-    level.list<-sort(unique(model.level))
+  if(!is.null(level)){
+    level.list<-sort(unique(level))
     n.L<-length(level.list)
     Model.level<-rep(level.list[n.L],nrow(SS.table)-1)    
     temp.flag<-rep(TRUE,length(Model.level))
     for(i in n.L:1){
-      i.id<-which(model.level==i)
+      i.id<-which(level==i)
       for(k in i.id){
         Model.level[which((design.M1[,k]!="")*temp.flag==1)]<-i
         temp.flag[design.M1[,k]!=""]<-FALSE
@@ -251,7 +274,7 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
   }   
   n.t<-nrow(SS.table)
   flag.zero.MSE<-FALSE  
-
+  
   if(SS.table[n.t,2]==0){
     SS.table[n.t,1:2]<-SS.table[n.t-1,1:2] 
     temp.name<-rownames(SS.table)[n.t]
@@ -264,7 +287,7 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
       for(j in 1:length(del.list))
         keep.id<-c(keep.id,which(t.EMS[[i]]==del.list[j]))
       if(length(keep.id)!=0)
-         t.EMS[[i]]<-t.EMS[[i]][-keep.id]
+        t.EMS[[i]]<-t.EMS[[i]][-keep.id]
     }
     EMS<-unlist(lapply(t.EMS,function(x) paste(x,sep="",collapse="+")))
     EMS[n.t-1]<-EMS[n.t]
@@ -285,10 +308,11 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
     if(sum(EMS==SS.temp)!=0){
       F.temp<-SS.table[i,3]/SS.table[which(EMS==SS.temp),3]
       pValue.temp<- 1-stats::pf(F.temp,SS.table[i,1],
-                         SS.table[which(EMS==SS.temp),1])
-    }else if(i!=nrow(SS.table) & approx.flag){
+                                SS.table[which(EMS==SS.temp),1])
+    }else if(i!=nrow(SS.table) & approximate){
       test.EMS<-split.EMS[[i]]
-      Appr.result<-Approx.F(SS.table=data.frame(SS.table,EMS=c(EMS)),approx.id=i)
+      Appr.result<-ApproxF(SS.table=data.frame(SS.table,EMS=c(EMS)),
+                           approx.name=rownames(SS.table)[i])
       F.temp<-Appr.result$Appr.F
       pValue.temp<-Appr.result$Appr.Pvalue
     } else{
@@ -321,13 +345,12 @@ EMS.anova<-function(data.tot,Y.name,var.list,FixRan.list,nested.list=NULL,
     Signif<-c(Signif,Signif.temp)    
   }
   
-  SS.table.t<-cbind(SS.table[,1],
-                     round(SS.table[,2],4),
-                     round(SS.table[,3],4))
+  SS.table.t<-cbind(SS.table[,1],SS.table[,2],SS.table[,3])
   colnames(SS.table.t)<-c("Df","SS","MS")
   if(!is.null(Model.level)){
     tot.result<-data.frame(SS.table.t,Fvalue=F.value,Pvalue=P.value,
-                           Sig=Signif,Model.Level=Model.level,EMS=matrix(EMS))    
+                           Sig=Signif,Model.Level=Model.level,EMS=matrix(EMS))   
+ 
   }else{
     tot.result<-data.frame(SS.table.t,Fvalue=F.value,Pvalue=P.value,
                            Sig=Signif,EMS=matrix(EMS))   

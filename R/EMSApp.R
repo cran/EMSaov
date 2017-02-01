@@ -1,17 +1,19 @@
 #' Shiny App for the analysis of variance in various experimental designs
 #' 
 #' Shiny App for the analysis of variance in various experimental designs
-#' @usage EMSaovApp()
+#' @usage EMSaovApp(nested.N=2)
+#' @param nested.N number of factors of possible crossed design 
+#'                 which can nest a factor
 #' @export
 #' @examples
 #' #EMSaovApp()
 
-EMSaovApp<-function(){
+EMSaovApp<-function(nested.N=2){
   EMSaov.env<-new.env()
   EMS_app=shiny::shinyApp(
     ui=shiny::fluidPage(
       shiny::headerPanel("Shiny Application for ANOVA with EMS"),
-      shiny::fileInput("outputfile",label="File input"),
+      shiny::fileInput("outputfile",label="Select data file in csv"),
       shiny::br(),
       shiny::wellPanel(  
         shiny::fluidRow(shiny::column(3,shiny::uiOutput("choose_Yvar"))),
@@ -112,14 +114,37 @@ EMSaovApp<-function(){
       }) 
      
       makeselectButton<-function(n){
+        nested.L<-EMSaov.env$Colnames
+        if(nested.N==2){
+          nested.n<-length(nested.L)
+          for(i in 1:(nested.n-1))
+          for(j in (i+1):nested.n)  
+            nested.L<-c(nested.L,paste(nested.L[i],nested.L[j],sep="*"))
+        }else{
+          p<-length(nested.L)-1
+          nn<-2^p
+          D.matrix<-matrix(as.numeric(
+                           unlist(strsplit(sapply(0:(nn-1),
+                                  function(x) 
+                                    paste(rev(as.integer(intToBits(x))[1:p]), 
+                                          collapse="")),""))),
+                                           byrow=TRUE,ncol=p)
+          nested.L<-apply(D.matrix,1,
+                         function(x) 
+                           paste(nested.L[-(p+1)][as.logical(x)],collapse="*"))
+          nested.L<-rev(nested.L)[sort.list(apply(D.matrix[nn:1,],1,sum))][-1]   
+        }
+
+                
         if(n==1){
           shiny::selectInput(paste0("nested",n),
                      label=paste0("[nested]\n ",EMSaov.env$Colnames[n]),
-                     c("None",EMSaov.env$Colnames))
+                     c("None",nested.L))                     
         }else{
           shiny::selectInput(paste0("nested",n),
                              label=EMSaov.env$Colnames[n],
-                             c("None",EMSaov.env$Colnames))
+                             #c("None",EMSaov.env$Colnames))
+                             c("None",nested.L)) 
         }
       }
      
@@ -184,7 +209,7 @@ EMSaovApp<-function(){
           graphics::par(mfrow=c(r,r))
           for(i in 1:(p-1)){
             for(j in (i+1):p){
-              temp.group<-as.numeric(X[,j])
+              temp.group<-as.numeric(as.factor(X[,j]))
               r<-length(table(X[,i]))
               graphics::matplot(c(-0.5,r),range(Y),type="n",
                      xlab=input$Xvar[i],ylab=input$Yvar,
@@ -228,11 +253,7 @@ EMSaovApp<-function(){
               nested[i]<-nest
             }
           }
-          names(nested)<-EMSaov.env$Colnames
-          nested<-nested[input$Xvar]
           n<-length(input$Xvar)
-         
-         #split
           split<-NULL
           for(i in 1:EMSaov.env$NUM)
             split[i]<-input[[paste0("split",i)]]
@@ -241,19 +262,26 @@ EMSaovApp<-function(){
           split<-split[c(input$Xvar)]
           split<-split[!is.na(split)]
           var.list<-input$Xvar      
-          nest.temp<-rep(NA,length(nested))
-          for(i in 1:length(nested))
-            nest.temp[i]<-ifelse(nested[i]=="",NA,which(var.list==nested[i]))
-          nested<-nest.temp
+          nested<-ifelse(nested=="None",NA,nested)
           if(sum(split==1)==length(split)) 
             split<-NULL      
-          data.tot<-EMSaov.env$outputData[,c(input$Xvar,input$Yvar)]
-          out<- EMS.anova(data.tot=data.tot,
-                                 Y.name=input$Yvar,
-                                 var.list=input$Xvar,
-                                 FixRan.list=type,                        
-                                 nested.list=input$Xvar[nested],
-                                 model.level=split)
+          data<-EMSaov.env$outputData[,c(input$Xvar,input$Yvar)]
+          formula<-paste(input$Yvar,"~",input$Xvar[1])
+          if(length(input$Xvar)>1){
+            for(i in 2:length(input$Xvar))
+               formula<-paste(formula,"*",input$Xvar[i])
+          }    
+          
+          out<-EMSanova(formula=formula(formula),data=data,
+                                 type=type,                        
+                                 nested=nested,#input$Xvar[nested],
+                                 level=split)
+          shiny::validate(
+            shiny::need(out!=0,
+                 "EMSApp cannot handle the unbalanced design.")          
+          ) 
+          out<-data.frame(source=rownames(out),out)          
+          
         }      
       })
      
@@ -267,10 +295,11 @@ EMSaovApp<-function(){
          
           for(i in 1:EMSaov.env$NUM){
            EMSaov.env$Class[i]<-input[[paste0("level",i)]]
-          }  #inputEMSaov.env$Class     
+          }      
          
           level<-EMSaov.env$Class[c(input$Xvar)]
           level<-c(level,mean(table(X)))
+          
           Type<-matrix("F",nrow=length(input$Xvar))
           rownames(Type)<-input$Xvar
           Type[input$type,]<-"R"
@@ -286,8 +315,6 @@ EMSaovApp<-function(){
               nested[i]<-nest
             }
           }
-          names(nested)<-EMSaov.env$Colnames
-          nested<-nested[input$Xvar]
           n<-length(input$Xvar)
           split<-NULL
           for(i in 1:EMSaov.env$NUM)
@@ -296,21 +323,27 @@ EMSaovApp<-function(){
           split<-split[c(input$Xvar)]
           split<-split[!is.na(split)]
           var.list<-input$Xvar      
-          nest.temp<-rep(NA,length(nested))
-          for(i in 1:length(nested))
-            nest.temp[i]<-ifelse(nested[i]=="None",
-                                 NA,which(var.list==nested[i]))
-          nested<-nest.temp
+          nested<-ifelse(nested=="None",NA,nested)          
           if(sum(split==1)==length(split)) 
             split<-NULL      
-          data.tot<-EMSaov.env$outputData[,c(input$Xvar,input$Yvar)]
-          out<- EMS.anova(data.tot=data.tot,
-                                 Y.name=input$Yvar,
-                                 var.list=input$Xvar,
-                                 FixRan.list=type,                        
-                                 nested.list=input$Xvar[nested],
-                                 model.level=split,
-                                 approx.flag=TRUE)
+          data<-EMSaov.env$outputData[,c(input$Xvar,input$Yvar)]
+          
+          formula<-paste(input$Yvar,"~",input$Xvar[1])
+          if(length(input$Xvar)>1){
+            for(i in 2:length(input$Xvar))
+              formula<-paste(formula,"*",input$Xvar[i])
+          }    
+          
+          out<- EMSanova(formula=formula(formula),data=data,
+                         type=type,                        
+                         nested=nested,#input$Xvar[nested],
+                         level=split,
+                         approximate=TRUE)
+          shiny::validate(
+            shiny::need(out!=0,
+            "EMSApp cannot handle the unbalanced design.")          
+          )  
+          out<-data.frame(source=rownames(out),out)
           EMSaov.env$outANOVA<-out
         }      
       })
@@ -335,7 +368,7 @@ EMSaovApp<-function(){
           for(i in temp.input)
             sel.id<-c(sel.id,which(rownames(EMSaov.env$outANOVA)==i))
           if(length(sel.id)>1){
-            temp.SS<-EMSaov.env$outANOVA[,1:2]
+            temp.SS<-EMSaov.env$outANOVA[,c("Df","SS")]
             temp.SS$Df<-as.numeric(as.character(temp.SS$Df))
             temp.SS$SS<-as.numeric(as.character(temp.SS$SS))
             Residuals<-apply(temp.SS[sel.id,],2,sum)
@@ -348,9 +381,11 @@ EMSaovApp<-function(){
             Model.level<-c(Model.level[-sel.id],
                            Model.level[length(Model.level)])
             out<- PooledANOVA(EMSaov.env$outANOVA,del.ID)
+            out<-data.frame(source=rownames(out),out)
           }else{
             out<-EMSaov.env$outANOVA 
           }
+          out
         }      
       })
     }#end server
