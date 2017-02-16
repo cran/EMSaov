@@ -66,19 +66,16 @@ EMSanova<-function(formula,data,type=NULL,nested=NULL,
   }   
   EMSflag<-FALSE
   n.table<-NULL
-#  if(is.null(n.table)){
-    for(i in 1:length(var.list)){
-      temp<-table(data[,var.list[i]])
-      if(sum(temp!=mean(temp))!=0)
-         EMSflag<-TRUE
-      n.table<-c(n.table,length(temp))
-    }
-    n.table<-c(n.table,mean(table(apply(data[,var.list],1,
-                                        function(x) paste(x,collapse="")))))
-#  }
+  for(i in 1:length(var.list)){
+    temp<-table(data[,var.list[i]])
+    if(sum(temp!=mean(temp))!=0)
+      EMSflag<-TRUE
+    n.table<-c(n.table,length(temp))
+  }
+  n.table<-c(n.table,mean(table(apply(data[,var.list],1,
+                                      function(x) paste(x,collapse="")))))
   if(EMSflag){
-    warning("EMSanova cannot handle the unbalanced design.")
-    return(0)
+    stop("EMSanova cannot handle the unbalanced design.")
   }  
   ## Change all X variables to factors
   
