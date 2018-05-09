@@ -22,4 +22,3 @@ anova.result
 del.ID<-c("Gate:Day","Residuals")
 PooledANOVA(anova.result,del.ID)
 }
-

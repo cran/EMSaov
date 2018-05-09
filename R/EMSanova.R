@@ -72,7 +72,7 @@ EMSanova<-function(formula,data,type=NULL,nested=NULL,
       EMSflag<-TRUE
     n.table<-c(n.table,length(temp))
   }
-  n.table<-c(n.table,mean(table(apply(data[,var.list],1,
+  n.table<-c(n.table,mean(table(apply(data[,var.list,drop=FALSE],1,
                                       function(x) paste(x,collapse="")))))
   if(EMSflag){
     stop("EMSanova cannot handle the unbalanced design.")
@@ -94,7 +94,7 @@ EMSanova<-function(formula,data,type=NULL,nested=NULL,
     design.M1<-cbind(design.M1,temp1)
   }
   
-  design.M1<-design.M1[-1,]
+  design.M1<-design.M1[-1,,drop=FALSE]
   
   ## Full model ANOVA
   
@@ -186,7 +186,7 @@ EMSanova<-function(formula,data,type=NULL,nested=NULL,
   p.EMS<-ncol(EMS.table)
   EMS.table[,p.EMS]<-n.table[p.EMS]
   EMS.table[n.EMS,]<-1
-  temp<-design.M1[,1:length(var.list)]
+  temp<-design.M1[,1:length(var.list),drop=FALSE]
   temp.nest<-design.M1[,-c(1:length(var.list)),drop=FALSE]
   temp[temp==""]<-NA
   for(i in 1:ncol(temp)){
@@ -206,7 +206,7 @@ EMSanova<-function(formula,data,type=NULL,nested=NULL,
   
   ## EMS  
   
-  temp.t<-design.M1[,1:length(var.list)]
+  temp.t<-design.M1[,1:length(var.list),drop=FALSE]
   EMS<-NULL
   n.E<-nrow(EMS.table)
   id.keep<-NULL 

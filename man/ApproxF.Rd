@@ -25,4 +25,3 @@ EMSanova(thickness~Gate+Operator+Day,data=film,
           approximate=TRUE)                      
        
 }
-

@@ -16,4 +16,3 @@ Shiny App for the analysis of variance in various experimental designs
 \examples{
 #EMSaovApp()
 }
-

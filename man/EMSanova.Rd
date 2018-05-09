@@ -33,4 +33,3 @@ anova.result<-EMSanova(velocity~Group+Subject+test,data=baseball,
                  level=c(1,1,2))
 anova.result                  
 }
-
